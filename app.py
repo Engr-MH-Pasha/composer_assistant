@@ -200,7 +200,18 @@ with tab3:
         if st.button("Extract Text from Images"):
             all_image_texts = []
             progress_bar = st.progress(0)
-            
+
+            # Auto-detect active vision model from your Groq account
+            try:
+                available_models = [m.id for m in client.models.list().data]
+                # Check for active vision models
+                vision_candidate = next(
+                    (m for m in available_models if m in ["qwen/qwen3.8-27b", "meta-llama/llama-4-scout-17b-vision"] or "vision" in m),
+                    "qwen/qwen3.8-27b"
+                )
+            except Exception:
+                vision_candidate = "qwen/qwen3.8-27b"
+
             for idx, img in enumerate(image_files):
                 try:
                     image_obj = Image.open(img)
@@ -211,11 +222,11 @@ with tab3:
                     base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
                     
                     vision_response = client.chat.completions.create(
-                        model="qwen/qwen3.6-27b",
+                        model=vision_candidate,
                         messages=[{
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the raw text."},
+                                {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the raw extracted text."},
                                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                             ]
                         }],
@@ -228,13 +239,13 @@ with tab3:
                 
                 progress_bar.progress((idx + 1) / len(image_files))
             
-            raw_extracted_text = "\n\n".join(all_image_texts)
-            st.session_state["extracted_img_text"] = raw_extracted_text
-            st.success("Images text extracted successfully!")
+            if all_image_texts:
+                raw_extracted_text = "\n\n".join(all_image_texts)
+                st.session_state["extracted_img_text"] = raw_extracted_text
+                st.success("Images text extracted successfully!")
 
     if "extracted_img_text" in st.session_state and not raw_extracted_text:
         raw_extracted_text = st.session_state["extracted_img_text"]
-
 with tab4:
     direct_text = st.text_area("Write or paste raw draft here:", height=180)
     if direct_text.strip():
