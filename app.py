@@ -163,11 +163,19 @@ tab1, tab2, tab3, tab4 = st.tabs([
 raw_extracted_text = ""
 
 with tab1:
-    doc_file = st.file_uploader("Upload PDF, Word (.docx), or Excel (.xlsx)", type=["pdf", "docx", "xlsx"])
-    if doc_file:
-        raw_extracted_text = extract_text_from_file(doc_file)
-        st.success(f"Loaded: {doc_file.name}")
-
+    doc_files = st.file_uploader(
+        "Upload PDF, Word (.docx), or Excel (.xlsx)", 
+        type=["pdf", "docx", "xlsx"], 
+        accept_multiple_files=True  # 👈 اس سے متعدد فائلیں اپلوڈ ہوں گی
+    )
+    if doc_files:
+        combined_texts = []
+        for file in doc_files:
+            file_text = extract_text_from_file(file)
+            if file_text.strip():
+                combined_texts.append(f"--- Document: {file.name} ---\n{file_text}")
+                st.success(f"Loaded: {file.name}")
+        raw_extracted_text = "\n\n".join(combined_texts)
 with tab2:
     st.write("Record spoken Urdu or English:")
     audio_data = st.audio_input("Record Voice")
@@ -182,26 +190,43 @@ with tab2:
         st.success("Audio transcribed successfully!")
 
 with tab3:
-    image_file = st.file_uploader("Upload document snapshot or handwritten note (JPG / PNG)", type=["jpg", "jpeg", "png"])
-    if image_file:
-        st.image(image_file, width=300)
-        if st.button("Extract Text via Vision"):
-            base64_image = base64.b64encode(image_file.getvalue()).decode('utf-8')
-            mime = image_file.type
-            vision_response = client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image exactly as written. Provide only the text."},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64_image}"}}
-                    ]
-                }],
-                temperature=0.1
-            )
-            raw_extracted_text = vision_response.choices[0].message.content
-            st.success("Text extracted from image!")
+    image_files = st.file_uploader(
+        "Upload document snapshots or handwritten notes (JPG / PNG)", 
+        type=["jpg", "jpeg", "png"], 
+        accept_multiple_files=True  # 👈 اس سے متعدد تصاویر اپلوڈ ہوں گی
+    )
+    if image_files:
+        st.write(f"کل تصاویر منتخب ہوئیں: {len(image_files)}")
+        if st.button("Extract Text from All Images"):
+            all_image_texts = []
+            progress_bar = st.progress(0)
+            
+            for idx, img in enumerate(image_files):
+                base64_image = base64.b64encode(img.getvalue()).decode('utf-8')
+                mime = img.type
+                
+                vision_response = client.chat.completions.create(
+                    model="llama-3.2-11b-vision-preview",
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image exactly as written. Provide only the text."},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64_image}"}}
+                        ]
+                    }],
+                    temperature=0.1
+                )
+                img_text = vision_response.choices[0].message.content
+                all_image_texts.append(f"--- Image {idx+1}: {img.name} ---\n{img_text}")
+                progress_bar.progress((idx + 1) / len(image_files))
+            
+            raw_extracted_text = "\n\n".join(all_image_texts)
+            st.session_state["extracted_img_text"] = raw_extracted_text
+            st.success("تمام تصاویر سے ٹیکسٹ نکال لیا گیا!")
 
+    # اگر بٹن دبنے کے بعد پیج ریفریش ہو تو ٹیکسٹ برقرار رہے
+    if "extracted_img_text" in st.session_state and not raw_extracted_text:
+        raw_extracted_text = st.session_state["extracted_img_text"]
 with tab4:
     direct_text = st.text_area("Write or paste raw draft here:", height=180)
     if direct_text.strip():
