@@ -7,9 +7,10 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import getSampleStyleSheet
 import arabic_reshaper
 from bidi.algorithm import get_display
+from PIL import Image
 from groq import Groq
 
 import auth
@@ -89,7 +90,6 @@ def export_to_docx(text: str) -> io.BytesIO:
     doc = Document()
     for line in text.split("\n"):
         p = doc.add_paragraph(line)
-        # Rudimentary check for Urdu RTL script
         if any("\u0600" <= char <= "\u06FF" for char in line):
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     bio = io.BytesIO()
@@ -108,7 +108,6 @@ def export_to_pdf(text: str) -> io.BytesIO:
         if not line.strip():
             story.append(Spacer(1, 10))
             continue
-        # Reshape Urdu strings to prevent disconnected/reversed characters
         if any("\u0600" <= char <= "\u06FF" for char in line):
             reshaped_text = arabic_reshaper.reshape(line)
             bidi_text = get_display(reshaped_text)
@@ -166,7 +165,7 @@ with tab1:
     doc_files = st.file_uploader(
         "Upload PDF, Word (.docx), or Excel (.xlsx)", 
         type=["pdf", "docx", "xlsx"], 
-        accept_multiple_files=True  # 👈 اس سے متعدد فائلیں اپلوڈ ہوں گی
+        accept_multiple_files=True
     )
     if doc_files:
         combined_texts = []
@@ -176,6 +175,7 @@ with tab1:
                 combined_texts.append(f"--- Document: {file.name} ---\n{file_text}")
                 st.success(f"Loaded: {file.name}")
         raw_extracted_text = "\n\n".join(combined_texts)
+
 with tab2:
     st.write("Record spoken Urdu or English:")
     audio_data = st.audio_input("Record Voice")
@@ -196,48 +196,45 @@ with tab3:
         accept_multiple_files=True
     )
     if image_files:
-        st.write(f"منتخب تصاویر: {len(image_files)}")
+        st.write(f"Total Images Selected: {len(image_files)}")
         if st.button("Extract Text from Images"):
             all_image_texts = []
             progress_bar = st.progress(0)
             
             for idx, img in enumerate(image_files):
                 try:
-                    # تصویر کو مناسب سائز میں ری سائز کرنا تاکہ سائز کا مسئلہ نہ آئے
-                    from PIL import Image
                     image_obj = Image.open(img)
-                    image_obj.thumbnail((1024, 1024))  # زیادہ سے زیادہ 1024 پکسل
+                    image_obj.thumbnail((1024, 1024))
                     
                     buf = io.BytesIO()
                     image_obj.save(buf, format="JPEG")
                     base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
                     
-                    # مستحکم ویژن ماڈل کال
-                   vision_response = client.chat.completions.create(
-    model="qwen/qwen3.6-27b",  # 👈 Groq کا فعال ملٹی موڈل وژن ماڈل
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the raw text."},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-        ]
-    }],
-    temperature=0.1
-)
+                    vision_response = client.chat.completions.create(
+                        model="qwen/qwen3.6-27b",
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the raw text."},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                            ]
+                        }],
+                        temperature=0.1
                     )
                     img_text = vision_response.choices[0].message.content
                     all_image_texts.append(f"--- Document Image {idx+1} ---\n{img_text}")
                 except Exception as e:
-                    st.error(f"تصویر پروسیس کرنے میں مسئلہ آیا: {str(e)}")
+                    st.error(f"Image {idx+1} processing error: {str(e)}")
                 
                 progress_bar.progress((idx + 1) / len(image_files))
             
             raw_extracted_text = "\n\n".join(all_image_texts)
             st.session_state["extracted_img_text"] = raw_extracted_text
-            st.success("تصاویر سے متن کامیابی کے ساتھ نکال لیا گیا!")
+            st.success("Images text extracted successfully!")
 
     if "extracted_img_text" in st.session_state and not raw_extracted_text:
         raw_extracted_text = st.session_state["extracted_img_text"]
+
 with tab4:
     direct_text = st.text_area("Write or paste raw draft here:", height=180)
     if direct_text.strip():
