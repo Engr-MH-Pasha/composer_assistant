@@ -105,15 +105,25 @@ def export_to_pdf(text: str) -> io.BytesIO:
     story = []
 
     for line in text.split("\n"):
-        if not line.strip():
+        clean_line = line.strip()
+        if not clean_line:
             story.append(Spacer(1, 10))
             continue
-        if any("\u0600" <= char <= "\u06FF" for char in line):
-            reshaped_text = arabic_reshaper.reshape(line)
-            bidi_text = get_display(reshaped_text)
-            story.append(Paragraph(bidi_text, normal_style))
+
+        # XML اور HTML اسپیشل کریکٹرز کو محفوظ بنانا
+        safe_text = saxutils.escape(clean_line)
+
+        # اردو رسم الخط کو ری شیپ کرنا
+        if any("\u0600" <= char <= "\u06FF" for char in safe_text):
+            try:
+                reshaped_text = arabic_reshaper.reshape(safe_text)
+                bidi_text = get_display(reshaped_text)
+                story.append(Paragraph(bidi_text, normal_style))
+            except Exception:
+                story.append(Paragraph(safe_text, normal_style))
         else:
-            story.append(Paragraph(line, normal_style))
+            story.append(Paragraph(safe_text, normal_style))
+
         story.append(Spacer(1, 6))
 
     pdf.build(story)
