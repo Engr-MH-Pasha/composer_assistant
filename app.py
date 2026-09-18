@@ -213,16 +213,17 @@ with tab3:
                     base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
                     
                     # مستحکم ویژن ماڈل کال
-                    vision_response = client.chat.completions.create(
-                        model="llama-3.2-90b-vision-preview",  # 👈 اپڈیٹ شدہ ماڈل
-                        messages=[{
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": "Transcribe all Urdu and English text from this image accurately. Return only the raw extracted text."},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                            ]
-                        }],
-                        temperature=0.1
+                   vision_response = client.chat.completions.create(
+    model="qwen/qwen3.6-27b",  # 👈 Groq کا فعال ملٹی موڈل وژن ماڈل
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the raw text."},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+        ]
+    }],
+    temperature=0.1
+)
                     )
                     img_text = vision_response.choices[0].message.content
                     all_image_texts.append(f"--- Document Image {idx+1} ---\n{img_text}")
