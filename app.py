@@ -98,39 +98,118 @@ def export_to_docx(text: str) -> io.BytesIO:
     bio.seek(0)
     return bio
 
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+import re
+
 def export_to_pdf(text: str) -> io.BytesIO:
     bio = io.BytesIO()
-    pdf = SimpleDocTemplate(bio, pagesize=letter)
+    
+    # 1. مناسب مارجنز کے ساتھ A4 پیج سیٹ اپ (تنگ / کمپریسڈ ختم)
+    pdf = SimpleDocTemplate(
+        bio, 
+        pagesize=A4,
+        rightMargin=45, 
+        leftMargin=45, 
+        topMargin=45, 
+        bottomMargin=45
+    )
+    
     styles = getSampleStyleSheet()
-    normal_style = styles['Normal']
-    story = []
+    
+    # 2. پروفیشنل ایگزیکٹو اسٹائلز
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor("#1A365D"),
+        spaceAfter=12
+    )
+    
+    h2_style = ParagraphStyle(
+        'DocH2',
+        parent=styles['Heading2'],
+        fontName='Helvetica-Bold',
+        fontSize=13,
+        leading=17,
+        textColor=colors.HexColor("#2B6CB0"),
+        spaceBefore=14,
+        spaceAfter=6
+    )
+    
+    body_style = ParagraphStyle(
+        'DocBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=15,
+        textColor=colors.HexColor("#2D3748"),
+        spaceAfter=6
+    )
+    
+    bullet_style = ParagraphStyle(
+        'DocBullet',
+        parent=body_style,
+        leftIndent=18,
+        spaceAfter=4
+    )
 
-    for line in text.split("\n"):
-        clean_line = line.strip()
-        if not clean_line:
-            story.append(Spacer(1, 10))
+    story = []
+    lines = text.split("\n")
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            story.append(Spacer(1, 6))
+            continue
+            
+        # ٹیبل کے ڈیشز وغیرہ کو نظر انداز کریں
+        if line.startswith("---") or line.startswith("| ---"):
             continue
 
-        # XML اور HTML اسپیشل کریکٹرز کو محفوظ بنانا
-        safe_text = saxutils.escape(clean_line)
+        # مارک ڈاؤن فارمیٹنگ کو کلین HTML ٹیگز میں بدلنا
+        formatted_line = saxutils.escape(line)
+        # Bold: **text** -> <b>text</b>
+        formatted_line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', formatted_line)
+        # Italic: *text* -> <i>\1</i>
+        formatted_line = re.sub(r'\*(.*?)\*', r'<i>\1</i>', formatted_line)
 
-        # اردو رسم الخط کو ری شیپ کرنا
-        if any("\u0600" <= char <= "\u06FF" for char in safe_text):
+        # اردو ٹیکسٹ ہینڈلنگ
+        if any("\u0600" <= char <= "\u06FF" for char in line):
             try:
-                reshaped_text = arabic_reshaper.reshape(safe_text)
-                bidi_text = get_display(reshaped_text)
-                story.append(Paragraph(bidi_text, normal_style))
+                reshaped = arabic_reshaper.reshape(line)
+                formatted_line = get_display(reshaped)
             except Exception:
-                story.append(Paragraph(safe_text, normal_style))
-        else:
-            story.append(Paragraph(safe_text, normal_style))
+                pass
 
-        story.append(Spacer(1, 6))
+        # 3. مناسب ہیڈنگز کی پہچان اور فارمیٹنگ
+        if line.startswith("# ") or "Document Title:" in line:
+            clean_title = formatted_line.replace("# ", "").replace("<b>Document Title:</b>", "").strip()
+            story.append(Paragraph(f"<b>{clean_title}</b>", title_style))
+            story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#CBD5E0"), spaceAfter=15))
+            
+        elif line.startswith("## ") or line.startswith("### "):
+            clean_h = formatted_line.lstrip("#").strip()
+            story.append(Paragraph(clean_h, h2_style))
+            
+        elif line.startswith(("- ", "* ", "• ")) or re.match(r'^\d+\.', line):
+            story.append(Paragraph(f"&bull; {formatted_line.lstrip('-*•0123456789. ')}", bullet_style))
+            
+        elif line.startswith("|"):
+            # ٹیبل قطار کو صاف ستھری لائن میں پڑھنا
+            clean_table_row = " &nbsp;&nbsp;|&nbsp;&nbsp; ".join([part.strip() for part in line.split("|") if part.strip()])
+            story.append(Paragraph(f"<i>{clean_table_row}</i>", body_style))
+            
+        else:
+            story.append(Paragraph(formatted_line, body_style))
 
     pdf.build(story)
     bio.seek(0)
     return bio
-
 def export_to_excel(text: str) -> io.BytesIO:
     bio = io.BytesIO()
     lines = [line.strip() for line in text.split("\n") if line.strip()]
