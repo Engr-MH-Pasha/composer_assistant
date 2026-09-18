@@ -198,22 +198,13 @@ with tab3:
     if image_files:
         st.write(f"Total Images Selected: {len(image_files)}")
         if st.button("Extract Text from Images"):
+            import time  # ریٹ لمیٹ سے بچنے کے لیے وقفہ
             all_image_texts = []
             progress_bar = st.progress(0)
-
-            # Auto-detect active vision model from your Groq account
-            try:
-                available_models = [m.id for m in client.models.list().data]
-                # Check for active vision models
-                vision_candidate = next(
-                    (m for m in available_models if m in ["qwen/qwen3.8-27b", "meta-llama/llama-4-scout-17b-vision"] or "vision" in m),
-                    "qwen/qwen3.8-27b"
-                )
-            except Exception:
-                vision_candidate = "qwen/qwen3.8-27b"
-
+            
             for idx, img in enumerate(image_files):
                 try:
+                    from PIL import Image
                     image_obj = Image.open(img)
                     image_obj.thumbnail((1024, 1024))
                     
@@ -221,19 +212,28 @@ with tab3:
                     image_obj.save(buf, format="JPEG")
                     base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
                     
+                    # وژن ماڈل کال مع max_tokens سیٹنگ
                     vision_response = client.chat.completions.create(
-                        model=vision_candidate,
+                        model="qwen/qwen3.8-27b",
                         messages=[{
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the raw extracted text."},
+                                {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image accurately. Return only the extracted text."},
                                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                             ]
                         }],
-                        temperature=0.1
+                        temperature=0.1,
+                        max_tokens=800  # 👈 اس سے ریٹ لمیٹ (1000 ٹوکنز) کبھی کراس نہیں ہوگی
                     )
+                    
                     img_text = vision_response.choices[0].message.content
                     all_image_texts.append(f"--- Document Image {idx+1} ---\n{img_text}")
+                    st.success(f"تصویر {idx+1} کامیابی سے پڑھ لی گئی۔")
+                    
+                    # ایک سے زیادہ تصاویر ہوں تو ریٹ لمیٹ کول ڈاؤن کے لیے مختصر وقفہ
+                    if idx < len(image_files) - 1:
+                        time.sleep(3)
+                        
                 except Exception as e:
                     st.error(f"Image {idx+1} processing error: {str(e)}")
                 
@@ -242,7 +242,7 @@ with tab3:
             if all_image_texts:
                 raw_extracted_text = "\n\n".join(all_image_texts)
                 st.session_state["extracted_img_text"] = raw_extracted_text
-                st.success("Images text extracted successfully!")
+                st.success("تمام تصاویر سے ٹیکسٹ کامیابی کے ساتھ نکال لیا گیا!")
 
     if "extracted_img_text" in st.session_state and not raw_extracted_text:
         raw_extracted_text = st.session_state["extracted_img_text"]
