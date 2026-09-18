@@ -193,38 +193,48 @@ with tab3:
     image_files = st.file_uploader(
         "Upload document snapshots or handwritten notes (JPG / PNG)", 
         type=["jpg", "jpeg", "png"], 
-        accept_multiple_files=True  # 👈 اس سے متعدد تصاویر اپلوڈ ہوں گی
+        accept_multiple_files=True
     )
     if image_files:
-        st.write(f"کل تصاویر منتخب ہوئیں: {len(image_files)}")
-        if st.button("Extract Text from All Images"):
+        st.write(f"منتخب تصاویر: {len(image_files)}")
+        if st.button("Extract Text from Images"):
             all_image_texts = []
             progress_bar = st.progress(0)
             
             for idx, img in enumerate(image_files):
-                base64_image = base64.b64encode(img.getvalue()).decode('utf-8')
-                mime = img.type
+                try:
+                    # تصویر کو مناسب سائز میں ری سائز کرنا تاکہ سائز کا مسئلہ نہ آئے
+                    from PIL import Image
+                    image_obj = Image.open(img)
+                    image_obj.thumbnail((1024, 1024))  # زیادہ سے زیادہ 1024 پکسل
+                    
+                    buf = io.BytesIO()
+                    image_obj.save(buf, format="JPEG")
+                    base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
+                    
+                    # مستحکم ویژن ماڈل کال
+                    vision_response = client.chat.completions.create(
+                        model="llama-3.2-90b-vision-preview",  # 👈 اپڈیٹ شدہ ماڈل
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Transcribe all Urdu and English text from this image accurately. Return only the raw extracted text."},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                            ]
+                        }],
+                        temperature=0.1
+                    )
+                    img_text = vision_response.choices[0].message.content
+                    all_image_texts.append(f"--- Document Image {idx+1} ---\n{img_text}")
+                except Exception as e:
+                    st.error(f"تصویر پروسیس کرنے میں مسئلہ آیا: {str(e)}")
                 
-                vision_response = client.chat.completions.create(
-                    model="llama-3.2-11b-vision-preview",
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Extract and transcribe all written Urdu and English text from this image exactly as written. Provide only the text."},
-                            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64_image}"}}
-                        ]
-                    }],
-                    temperature=0.1
-                )
-                img_text = vision_response.choices[0].message.content
-                all_image_texts.append(f"--- Image {idx+1}: {img.name} ---\n{img_text}")
                 progress_bar.progress((idx + 1) / len(image_files))
             
             raw_extracted_text = "\n\n".join(all_image_texts)
             st.session_state["extracted_img_text"] = raw_extracted_text
-            st.success("تمام تصاویر سے ٹیکسٹ نکال لیا گیا!")
+            st.success("تصاویر سے متن کامیابی کے ساتھ نکال لیا گیا!")
 
-    # اگر بٹن دبنے کے بعد پیج ریفریش ہو تو ٹیکسٹ برقرار رہے
     if "extracted_img_text" in st.session_state and not raw_extracted_text:
         raw_extracted_text = st.session_state["extracted_img_text"]
 with tab4:
