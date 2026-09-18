@@ -75,7 +75,7 @@ def run_composition(raw_content: str, mode: str) -> str:
 
     system_prompt = prompts.get(mode, prompts["Default"])
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": raw_content}
