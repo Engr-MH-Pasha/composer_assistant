@@ -2,6 +2,7 @@ import io
 import base64
 import streamlit as st
 import pandas as pd
+import xml.sax.saxutils as saxutils
 from pypdf import PdfReader
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
